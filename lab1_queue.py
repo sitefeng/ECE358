@@ -65,9 +65,9 @@ class PacketQueue:
 		packSer = PacketServer(self._serviceTime, self.secondsPerTick)
 
 		numServiced = 0
-		totalCumulativePackets = 0
+		totalCumulativePackets = 0.0
 		totalCreatedPackets = 0
-		totalSojournTime = 0
+		totalSojournTime = 0.0
 		totalIdleTicks = 0
 		totalDroppedPackets = 0
 
@@ -115,18 +115,18 @@ class PacketQueue:
 
 
 		if numServiced <= 0 or self._totalTicks <= 0 or totalCreatedPackets <= 0:
-			print "Error: cannot generate stats"
+			print "No Packet Served"
 			return (-1, -1, -1, -1)
 
 		# Average number of packets in queue
-		currentEN = totalCumulativePackets / self._totalTicks
+		currentEN = float(totalCumulativePackets) / self._totalTicks
 
 		# Average sojourn(packet duration) time 
-		currentET = totalSojournTime / numServiced
+		currentET = float(totalSojournTime) / numServiced
 
-		currentPIdle = totalIdleTicks / self._totalTicks
+		currentPIdle = float(totalIdleTicks) / self._totalTicks
 
-		currentPLoss = totalDroppedPackets / totalCreatedPackets
+		currentPLoss = float(totalDroppedPackets) / totalCreatedPackets
 
 		return (currentEN, currentET, currentPIdle, currentPLoss)
 
@@ -251,9 +251,12 @@ class InfiniteQueue(PacketQueue):
 if __name__ == "__main__":
 
 	# ticks, packetPerSecond, length, serviceTime, queueSize:
-	queue = PacketQueue(10000, 5, 200, 99.7, 20)
-	EN, ET, PIdle, PLoss = queue.simulateOnce()
+	queue = PacketQueue(50000, 5, 200, 10, 20)
+	EN, ET, PIdle, PLoss = queue.runSimulation()
 
-	print("EN, ET, PIdle, PLoss: %f, %f, %f, %f" % (EN, ET, PIdle, PLoss))
+	PIdle *= 100
+	PLoss *= 100
+
+	print("EN[%f packets], ET[%f sec], PIdle[%f%%], PLoss:[%f%%]" % (EN, ET, PIdle, PLoss))
 
 
