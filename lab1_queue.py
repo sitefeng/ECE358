@@ -7,6 +7,9 @@ class Packet:
 	packetLength = 0
 	creationTime = -1
 
+	# Note: since transmission information was not provided, startServiceTime is the
+	# same as creationTime, give or take.
+	startServiceTime = -1
 	servicedTime = -1
 	serviced = False
 
@@ -15,9 +18,12 @@ class Packet:
 		self.creationTime = time
 		self.serviced = False
 
-	def service(self, time):
+	def completeService(self, time):
 		self.servicedTime = time
 		self.serviced = True
+
+	def startService(self, time):
+		self.startServiceTime = time
 
 	def duration(self):
 		if self.serviced == False or self.servicedTime == -1 or self.creationTime == -1:
@@ -55,7 +61,7 @@ class PacketQueue:
 	def simulateOnce(self):
 
 		queue = Queue.Queue(maxsize = self._maxQueueSize)
-		packGen = PacketGenerator(self._packetsPerSecond, self.secondsPerTick)
+		packGen = PacketGenerator(self._packetsPerSecond, self.secondsPerTick, self._packetLength)
 		packSer = PacketServer(self._serviceTime, self.secondsPerTick)
 
 		numServiced = 0
@@ -65,12 +71,15 @@ class PacketQueue:
 		totalIdleTicks = 0
 		totalDroppedPackets = 0
 
+		currentTime = -1
 		for i in xrange(self._totalTicks):
-			# Generation
-			generated = packGen.registerTick()
+			currentTime = self.currentTime(i)
 
-			if generated:
-				newPacket = Packet(self._packetLength, self.currentTime(i))
+			# Generation
+			generatedPacket = packGen.registerTick(currentTime)
+
+			if generatedPacket is not None:
+				newPacket = generatedPacket
 				totalCreatedPackets += 1
 
 				if not queue.full():
@@ -79,10 +88,10 @@ class PacketQueue:
 					# queue full, drop packet
 					totalDroppedPackets += 1
 
+			##############
 			# Servicing
-			
 			if packSer.statusBusy:
-				maybePacket = packSer.registerTick()
+				maybePacket = packSer.registerTick(currentTime)
 				if maybePacket is not None:
 					numServiced += 1
 					totalSojournTime += maybePacket.duration()
@@ -95,8 +104,8 @@ class PacketQueue:
 					#idle
 				else:
 					packet = queue.get()
-					packSer.receiveNewPacket(packet)
-					maybePacket = packSer.registerTick()
+					packSer.receiveNewPacket(packet, currentTime)
+					maybePacket = packSer.registerTick(currentTime)
 					if maybePacket is not None:
 						numServiced += 1
 						totalSojournTime += maybePacket.duration()
@@ -105,7 +114,7 @@ class PacketQueue:
 			totalCumulativePackets += queue.qsize()
 
 
-		if numServiced <=0 or self._totalTicks <=0 or totalCreatedPackets <=0:
+		if numServiced <= 0 or self._totalTicks <= 0 or totalCreatedPackets <= 0:
 			print "Error: cannot generate stats"
 			return (-1, -1, -1, -1)
 
@@ -118,6 +127,8 @@ class PacketQueue:
 		currentPIdle = totalIdleTicks / self._totalTicks
 
 		currentPLoss = totalDroppedPackets / totalCreatedPackets
+
+		return (currentEN, currentET, currentPIdle, currentPLoss)
 
 
 	# Returns average EN, ET, PIdle, PLoss
@@ -169,18 +180,20 @@ class PacketServer:
 		self._secondsPerTick = secondsPerTick
 		self.statusBusy = False
 
-	def receiveNewPacket(self, packet):
+	def receiveNewPacket(self, packet, time):
 		self.requiredTickerCount = self._serviceTime / self._secondsPerTick
 		self.currentTickerCount = 0
 		self.statusBusy = True
 		self._packet = packet
+		self._packet.startService(time)
 
 	# Returns packet if the current packet has been served
-	def registerTick(self):
+	def registerTick(self, time):
 		self.currentTickerCount += 1
 
 		if self.currentTickerCount >= self.requiredTickerCount:
 			self.statusBusy = False
+			self._packet.completeService(time)
 			return self._packet
 		else:
 			return None
@@ -191,16 +204,18 @@ class PacketGenerator:
 
 	_packetsPerSecond = 5
 	_secondsPerTick = 0
+	_packetLength = 200
 
 	uniformRandomVariable = 1.0
 
 	currentTickerCount = 0
 	requiredTickerCount = 1000
 
-
-	def __init__(self, packetPerSecond, secondsPerTick):
+	# param packetLength in bits
+	def __init__(self, packetPerSecond, secondsPerTick, packetLength):
 		self._packetsPerSecond = packetPerSecond
 		self._secondsPerTick = secondsPerTick
+		self._packetLength = packetLength
 		self.startNewPacket()
 
 
@@ -215,15 +230,15 @@ class PacketGenerator:
 
 
 	# Returns PacketArrived:Bool, indicating if the packet has arrived or not
-	def registerTick(self):
+	def registerTick(self, currentTime):
 		self.currentTickerCount += 1
 
 		if self.currentTickerCount >= self.requiredTickerCount:
 			print "Packet Generated"
 			self.startNewPacket()
-			return True
+			return Packet(self._packetLength, currentTime)
 		else:
-			return False
+			return None
 
 
 
@@ -234,7 +249,9 @@ class InfiniteQueue(PacketQueue):
 
 
 if __name__ == "__main__":
-	queue = PacketQueue(100, 5, 200, 0.01, 200)
+
+	# ticks, packetPerSecond, length, serviceTime, queueSize:
+	queue = PacketQueue(10000, 5, 200, 99.7, 20)
 	EN, ET, PIdle, PLoss = queue.simulateOnce()
 
 	print("EN, ET, PIdle, PLoss: %f, %f, %f, %f" % (EN, ET, PIdle, PLoss))
