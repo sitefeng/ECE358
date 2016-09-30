@@ -4,6 +4,9 @@ import Queue
 import sys
 
 
+kSecondsPerTick = 0.0001
+kNumRepeats = 5
+
 class Packet:
     packetLength = 0
     creationTime = -1
@@ -43,8 +46,8 @@ class PacketQueue:
     _maxQueueSize = 200
 
     # Constants
-    experimentRepeats = 5
-    secondsPerTick = 0.0001
+    experimentRepeats = kNumRepeats
+    secondsPerTick = kSecondsPerTick
 
     def __init__(self, ticks, packetPerSecond, length, serviceSpeed, queueSize):
         self._totalTicks = ticks
@@ -54,6 +57,7 @@ class PacketQueue:
         self._maxQueueSize = queueSize
 
     # Returns EN, ET, PIdle, PLoss
+    @property
     def simulateOnce(self):
 
         queue = Queue.Queue(maxsize=self._maxQueueSize)
@@ -66,6 +70,7 @@ class PacketQueue:
         totalSojournTime = 0.0
         totalIdleTicks = 0
         totalDroppedPackets = 0
+
         currentTime = -1
 
         for i in xrange(self._totalTicks):
@@ -92,12 +97,14 @@ class PacketQueue:
                     numServiced += 1
                     totalSojournTime += maybePacket.duration()
                 else:
-                    totalIdleTicks += 1
+                    pass
+                    # Busy processing
 
             else:  # server not busy
                 if queue.empty():
                     pass
                     # idle
+                    totalIdleTicks += 1
                 else:
                     packet = queue.get()
                     packSer.receiveNewPacket(packet, currentTime)
@@ -134,7 +141,7 @@ class PacketQueue:
         totalPLoss = 0
 
         for i in xrange(self.experimentRepeats):
-            EN, ET, PIdle, PLoss = self.simulateOnce()
+            EN, ET, PIdle, PLoss = self.simulateOnce
 
             totalEN += EN
             totalET += ET
@@ -173,8 +180,8 @@ class PacketServer:
         self.statusBusy = False
 
     def receiveNewPacket(self, packet, time):
-        packetsPerTick = self._packetsPerSecond * self._secondsPerTick
-        self.requiredTickerCount = float(packet.packetLength * packetsPerTick) / (self._serviceSpeed * pow(10, 6) * self._secondsPerTick)
+        tickDuration = float(packet.packetLength) / (self._serviceSpeed * 10**6)
+        self.requiredTickerCount = tickDuration / self._secondsPerTick
         self.currentTickerCount = 0
         self.statusBusy = True
         self._packet = packet
@@ -213,7 +220,7 @@ class PacketGenerator:
         uniformRandomVariable = random.uniform(0, 1)
         timeRequired = (-1.0 / self._packetsPerSecond) * math.log(1.0 - uniformRandomVariable)
         self.requiredTickerCount = float(timeRequired) / float(self._secondsPerTick)
-        print "New Packet, requiredTickerCount: %d" % self.requiredTickerCount
+        # print "New Packet, requiredTickerCount: %d" % self.requiredTickerCount
 
         # Reset
         self.currentTickerCount = 0
@@ -223,7 +230,7 @@ class PacketGenerator:
         self.currentTickerCount += 1
 
         if self.currentTickerCount >= self.requiredTickerCount:
-            print "Packet Generated"
+            # print "Packet Generated"
             self.startNewPacket()
             return Packet(self._packetLength, currentTime)
         else:
@@ -274,11 +281,12 @@ def main(args):
 def generateGraph():
     # TICKS, lambda, length, c, k
 
-    numTicks = 50000
+    numSeconds = 60
+    numTicks = int(numSeconds / kSecondsPerTick)
     packetsPerSecond = -1
     packetLength = 2000
     serviceSpeed = 1
-    queueSize = 1000
+    queueSize = 10
 
     for _p in xrange(2, 9, 1):
         p = _p / 10.0
@@ -286,7 +294,7 @@ def generateGraph():
 
         # ticks, packetPerSecond, length, serviceSpeed, queueSize:
         queue = PacketQueue(numTicks, packetsPerSecond, packetLength, serviceSpeed, queueSize)
-        EN, ET, PIdle, PLoss = queue.simulateOnce()
+        EN, ET, PIdle, PLoss = queue.simulateOnce
 
         PIdle *= 100
         PLoss *= 100
