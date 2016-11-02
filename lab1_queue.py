@@ -57,7 +57,6 @@ class PacketQueue:
         self._maxQueueSize = queueSize
 
     # Returns EN, ET, PIdle, PLoss
-    @property
     def simulateOnce(self):
 
         queue = Queue.Queue(maxsize=self._maxQueueSize)
@@ -141,7 +140,7 @@ class PacketQueue:
         totalPLoss = 0
 
         for i in xrange(self.experimentRepeats):
-            EN, ET, PIdle, PLoss = self.simulateOnce
+            EN, ET, PIdle, PLoss = self.simulateOnce()
 
             totalEN += EN
             totalET += ET
@@ -246,9 +245,9 @@ def main(args):
     # TICKS, lambda, length, c, k
 
     numTicks = 50000
-    packetsPerSecond = 5
-    packetLength = 200
-    serviceSpeed = 10
+    packetsPerSecond = 250
+    packetLength = 2000
+    serviceSpeed = 1
     queueSize = 30
 
     if len(args) == 4 or len(args) == 5:
@@ -281,20 +280,20 @@ def main(args):
 def generateGraph():
     # TICKS, lambda, length, c, k
 
-    numSeconds = 60
+    numSeconds = 300
     numTicks = int(numSeconds / kSecondsPerTick)
     packetsPerSecond = -1
     packetLength = 2000
     serviceSpeed = 1
-    queueSize = 10
+    queueSize = 100000000
 
-    for _p in xrange(2, 9, 1):
+    for _p in xrange(2, 10, 1):
         p = _p / 10.0
         packetsPerSecond = p * float(serviceSpeed * 10 ** 6) / float(packetLength)
 
         # ticks, packetPerSecond, length, serviceSpeed, queueSize:
         queue = PacketQueue(numTicks, packetsPerSecond, packetLength, serviceSpeed, queueSize)
-        EN, ET, PIdle, PLoss = queue.simulateOnce
+        EN, ET, PIdle, PLoss = queue.runSimulation()
 
         PIdle *= 100
         PLoss *= 100
@@ -306,5 +305,5 @@ def generateGraph():
 
 
 if __name__ == "__main__":
-    generateGraph()
-    # main(sys.argv[1:])
+    # generateGraph()
+    main(sys.argv[1:])
