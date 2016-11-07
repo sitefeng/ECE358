@@ -8,19 +8,16 @@ kSecondsPerTick = 0.0001
 kNumRepeats = 5
 
 class Packet:
-    packetLength = 0
-    creationTime = -1
 
     # Note: since transmission information was not provided, startServiceSpeed is the
     # same as creationTime, give or take.
-    startServiceSpeed = -1
-    servicedTime = -1
-    serviced = False
 
     def __init__(self, length, time):
         self.packetLength = length
         self.creationTime = time
         self.serviced = False
+        self.servicedTime = -1
+        self.startServiceSpeed = -1
 
     def completeService(self, time):
         self.servicedTime = time
