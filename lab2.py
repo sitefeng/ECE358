@@ -49,15 +49,14 @@ class LAN:
 		self.lanSpeed = W #Speed of the LAN (bits/s)[fixed]
 		self.avgArrival = 0 #Average arrival rate (pkts/s)[var]
 		self.packetLength = L #Packet Length (bits)[fixed]
-		
 
 class Node:
-	#Constants
-	secondsPerTick = 0.01
+    #Constants
+    secondsPerTick = 0.01
 
-	# Input Variables
-	avgArrival = 0 #A Average arrival rate (pkts/s)[var]
-	packetLength = 0 #L Packet Length (bits)[fixed]
+    # Input Variables
+    avgArrival = 0 #A Average arrival rate (pkts/s)[var]
+    packetLength = 0 #L Packet Length (bits)[fixed]
 
 
 class NodeNonPersistent(Node):
@@ -65,12 +64,12 @@ class NodeNonPersistent(Node):
     def __init__(self):
     	self.avgArrival = 0 #A Average arrival rate (pkts/s)[var]
     	self.packetLength = 0 #L Packet Length (bits)[fixed]
-    	self.generator = PacketGenerator(self.avgArrival, self.secondsPerTick, self.packetLength)
 
 
     def registerTick(self):
+    	pass
+    	
 		
-
 
 class NodePPersistent(Node):
 	def __init__(self, P):
