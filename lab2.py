@@ -110,9 +110,11 @@ class NodeNonAndPPersistent(Node):
 		UNKNOWN = 0
 		SENSING = 1
 		WAITING = 2
-		SENDING = 3
-		JAMMING = 4
-		POSTJAMMING = 5
+		PRESENDING = 3
+		PRESENDWAITING = 4
+		SENDING = 5
+		JAMMING = 6
+		POSTJAMMING = 7
 
     class SendStatus:
     	SENDING = 0
@@ -153,7 +155,7 @@ class NodeNonAndPPersistent(Node):
 
     		elif self.sendState is SendState.SENSING:
     			if self.requiredStateTicks <= 0:
-    				self.sendState = SendState.SENDING
+    				self.sendState = SendState.PRESENDING
     				return
 
     			self.requiredStateTicks -= 1
@@ -173,6 +175,22 @@ class NodeNonAndPPersistent(Node):
     				waitTicks -= 1
     			else: # Finish waiting
 	    			self.sendState = SendState.UNKNOWN
+
+	    	elif self.sendState is SendState.PRESENDING:
+
+	    		shouldSend = random.uniform(0, 1) <= self.pPersistentProbability
+	    		if shouldSend:
+	    			self.sendState = SendState.SENDING
+	    		else:
+	    			self.sendState = SendState.PRESENDWAITING
+	    			waitTicks = self.generateRandomWaitTicks(currentI)
+	    			self.requiredStateTicks = waitTicks
+
+	    	elif self.sendState is SendState.PRESENDWAITING:
+	    		if self.requiredStateTicks > 0:
+	    			self.requiredStateTicks -= 1
+	    		else:
+	    			self.sendState = SendState.WAITING
 
     		elif self.sendState is SendState.SENDING:
 
@@ -226,23 +244,30 @@ class NodeNonAndPPersistent(Node):
     	return self.csmaBus.isBusyForNode(self, currTime)
 
     def sendPacketForTick(self, currentTime):
+
     	self.requiredStateTicks = requiredSendingTicks()
     	if senseMediumBusy(currentTime):
     		status = SendStatus.COLLISION
-    	elif self.requiredStateTicks >= 0:
+    	elif self.requiredStateTicks > 0:
     		self.requiredStateTicks -= 1
     		status = SendStatus.SENDING
-    	else:
-    		destNodeIndex = random.randint(1, self.lan.numNodes)
-    		while destNodeIndex == self.index:
-    			destNodeIndex = random.randint(1, self.lan.numNodes)
 
-    		newPacket = CSMAPacket(self.packetLength, currentTime, self.index, destNodeIndex):
-    		self.csmaBus.addPacket(newPacket)
+    		if self.requiredStateTicks == self.requiredSendingTicks():
+    			newPacket = generateNewPacket(currentTime)
+    			self.csmaBus.addPacket(newPacket)
+
+    	elif self.requiredStateTicks <= 0:
 			status = SendStatus.SUCCESS
 
     	return status
 
+    def generateNewPacket(self, currentTime):
+    	destNodeIndex = random.randint(1, self.lan.numNodes)
+    	while destNodeIndex == self.index:
+    		destNodeIndex = random.randint(1, self.lan.numNodes)
+
+    	newPacket = CSMAPacket(self.packetLength, currentTime, self.index, destNodeIndex)
+    	return newPacket
 
 
 class NodePPersistent(Node):
