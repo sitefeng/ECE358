@@ -3,22 +3,27 @@ import uuid
 import sys
 import random
 
+# Carrier Sense Multiple Access with collision detection(CSMA/CD)
+
 kSecondsPerTick = 10**(-8)
 kSenseBitTimes = 96
 kJammingBitTimes = 48
 kBEBMaxI = 10
 
+
 class CSMAPacket(Packet):
+
 	def __init__(self, length, time, srcNodeIndex, destNodeIndex):
 		super(CSMAPacket, self).__init__(length, time)
 		self.srcNodeIndex = srcNodeIndex
 		self.destNodeIndex = destNodeIndex
 		self.uid = uuid.uuid4()
 
+
 class CSMABus:
 
 	# S === propSpeed
-	def __init__(self, nodeDistance, propSpeed=2*(10**8), lanSpeed=10**6):
+	def __init__(self, nodeDistance=10, propSpeed=2*(10**8), lanSpeed=10**6):
 		self.packets = {}
 		self.nodeDistance = nodeDistance
 		self.propSpeed = propSpeed
@@ -65,20 +70,11 @@ class CSMABus:
 		return None
 
 
-# Carrier Sense Multiple Access with collision detection(CSMA/CD)
-class LAN:
-	def __init__(self, N, P=1, W= 10**6, L =1500*8):
-		self.numNodes = N #Number of computers [var]
-		self.lanSpeed = W #Speed of the LAN (bits/s)[fixed]
-		self.avgArrival = 0 #Average arrival rate (pkts/s)[var]
-		self.packetLength = L #Packet Length (bits)[fixed]
-
 class Node:
 
-    def __init__(self, index, LAN, L = 1500*8):
+    def __init__(self, lanSpeed, index, L):
     	self.index = index
-    	self.lan = lan
-    	self.lanSpeed = lan.lanSpeed
+    	self.lanSpeed = lanSpeed
     	self.packetLength = L #L Packet Length (bits)[fixed]
 
     # iVal is an integer
@@ -95,19 +91,19 @@ class Node:
     	return ticksReq
 
     def requiredSensingTicks(self):
-    	return kSenseBitTimes/lanSpeed/kSecondsPerTick
+    	return kSenseBitTimes/self.lanSpeed/kSecondsPerTick
 
     def requiredJammingTicks(self):
-    	return kJammingBitTimes/lanSpeed/kSecondsPerTick
+    	return kJammingBitTimes/self.lanSpeed/kSecondsPerTick
 
     def requiredSendingTicks(self):
-    	return self.packetLength/lanSpeed/kSecondsPerTick
+    	return self.packetLength/self.lanSpeed/kSecondsPerTick
 
 
 class NodeNonAndPPersistent(Node):
 
 	class SendState:
-		UNKNOWN = 0
+		IDLE = 0
 		SENSING = 1
 		WAITING = 2
 		PRESENDING = 3
@@ -121,18 +117,18 @@ class NodeNonAndPPersistent(Node):
     	SUCCESS = 1
     	COLLISION = -1
 
-    def __init__(self, W, csmaBus, shouldSenseWait, pPersistentProbability):
-    	super(NodeNonPersistent, self).__init__(W)
+    def __init__(self, index, W, L, csmaBus, shouldSenseWait, pPersistentProbability):
+    	super(NodeNonPersistent, self).__init__(W, index, L)
 
     	self.avgArrival = 0 #A Average arrival rate (pkts/s)[var]
 
     	self.csmaBus = csmaBus
-    	self.sendQueue = PacketQueue()
+    	self.sendQueue = PacketQueue(self.avgArrival, L, queueSize=10000)
 
     	self.requiredStateTicks = 0
     	self.currentI = 0
 
-    	self.sendState = SendState.UNKNOWN
+    	self.sendState = SendState.IDLE
 
     	self.jammingPacket = None
 
@@ -142,14 +138,20 @@ class NodeNonAndPPersistent(Node):
 
 
     def registerTick(self, currTime):
+
+        generatePacketForTick(currTime)
     	sendPacketForTick(currTime)
     	receivePacketForTick(currTime)
 
     	
+    def generatePacketForTick(self, currTime):
+        self.sendQueue.registerTick(currTime)
+
+
     def sendPacketForTick(self, currTime):
 
-    	if self.sendQueue.hasPacket():
-    		if self.sendState is SendState.UNKNOWN:
+    	if not self.sendQueue.isEmpty():
+    		if self.sendState is SendState.IDLE:
     			self.sendState = SendState.SENSING
     			self.requiredStateTicks = self.requiredSensingTicks()
 
@@ -174,7 +176,7 @@ class NodeNonAndPPersistent(Node):
     			if waitTicks > 0:
     				waitTicks -= 1
     			else: # Finish waiting
-	    			self.sendState = SendState.UNKNOWN
+	    			self.sendState = SendState.IDLE
 
 	    	elif self.sendState is SendState.PRESENDING:
 
@@ -199,7 +201,7 @@ class NodeNonAndPPersistent(Node):
     			if status == SendStatus.SENDING:
     				pass
     			elif status == SendStatus.SUCCESS:
-    				self.sendState = SendState.UNKNOWN
+    				self.sendState = SendState.IDLE
     				self.currentI = 0
     			else: #not success (collision state)
     				self.currentI += 1
@@ -228,14 +230,16 @@ class NodeNonAndPPersistent(Node):
     			if self.requiredStateTicks > 0:
     				self.requiredStateTicks -= 1
     			else:
-	    			self.sendState = SendState.UNKNOWN
+	    			self.sendState = SendState.IDLE
     	else:
     		pass # no packet to send
 
 
     def receivePacketForTick(self, currTime):
     	packet = self.csmaBus.packetArrivedForNode(self)
+
     	if packet is not None:
+            packet.completeService(currTime + packet.packetLength / self.lanSpeed)
     		self.csmaBus.removePacket(packet.uid)
 
 
@@ -254,6 +258,7 @@ class NodeNonAndPPersistent(Node):
 
     		if self.requiredStateTicks == self.requiredSendingTicks():
     			newPacket = generateNewPacket(currentTime)
+                newPacket.startService(currentTime)
     			self.csmaBus.addPacket(newPacket)
 
     	elif self.requiredStateTicks <= 0:
@@ -270,14 +275,58 @@ class NodeNonAndPPersistent(Node):
     	return newPacket
 
 
-class NodePPersistent(Node):
-	def __init__(self, P):
-		super(NodePPersistent, self).__init__(W)
-		self.PPersistentProbability = P #Persistent CSMA param
-    
+
+class LAN:
+
+    def __init__(self, totalTicks, N, A, shouldSenseWait, P=1, W=10**6, L=1500*8):
+        self.totalTicks = totalTicks
+        self.N = N
+        self.A = A
+        self.P = P
+        self.csmaBus = CSMABus()
+        self.stats = Statistics()
+
+        self.nodes = []
+        for index in xrange(0, self.N):
+            node = NodeNonAndPPersistent(index, W, L, self.csmaBus, shouldSenseWait, self.P)
+            self.nodes.append(node)
+
+    def simulate(self):
+        for tick in xrange(0, self.totalTicks):
+            for nodeIndex in xrange(1, self.N):
+                currTime = getCurrentTime(tick)
+                self.nodes[nodeIndex].registerTick(currTime)
+
+
+        results = "blah"
+        results2 = "blah"
+        return (results, results2)
+
+    def getCurrentTime(self, tickCount):
+        return tickCount * kSecondsPerTick
+
+class Statistics:
+
+    def __init__(self):
+
+    def trackPacketServiced(self, packet)
+
 
 def main(args):
 	
+    simulationTime = 5 * 60
+    totalTicks = simulationTime / kSecondsPerTick
+
+    Ns = [20, 40 ,60, 80, 100]
+    As = [6, 20]
+
+    for A in As:
+        for N in Ns:
+            myLAN = LAN(totalTicks, N, A, True)
+            (results, results2) = myLAN.simulate()
+
+
+    print("results")
 
 
 if __name__ == "__main__":
