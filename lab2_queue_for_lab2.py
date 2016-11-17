@@ -4,10 +4,7 @@ import Queue
 import sys
 
 
-kSecondsPerTick = 0.0001
-kNumRepeats = 5
-
-class Packet:
+class Packet(object):
 
     # Note: since transmission information was not provided, startServiceSpeed is the
     # same as creationTime, give or take.
@@ -34,20 +31,19 @@ class Packet:
         return self.servicedTime - self.creationTime
 
 
-class PacketQueue:
+class PacketQueue(object):
 
-    # Constants
-    experimentRepeats = kNumRepeats
-    secondsPerTick = kSecondsPerTick
+    def __init__(self, packetPerSecond, length, queueSize, secondsPerTick):
 
-    def __init__(self, packetPerSecond, length, queueSize=10000):
+        if packetPerSecond <= 0 or length <= 0:
+            print("Error: zero input for PacketQueue class")
 
         self.packetsPerSecond = packetPerSecond
         self.packetLength = length
         self.maxQueueSize = queueSize
 
         self.queue = Queue.Queue(maxsize=self.maxQueueSize)
-        packGen = PacketGenerator(self.packetsPerSecond, self.secondsPerTick, self.packetLength)
+        self.packGen = PacketGenerator(self.packetsPerSecond, secondsPerTick, self.packetLength)
 
 
     # Returns bool
@@ -57,7 +53,7 @@ class PacketQueue:
     def registerTick(self, currentTime):
 
         # Generation
-        generatedPacket = packGen.registerTick(currentTime)
+        generatedPacket = self.packGen.registerTick(currentTime)
 
         if generatedPacket is not None:
             newPacket = generatedPacket
@@ -70,8 +66,11 @@ class PacketQueue:
                 pass
                 # totalDroppedPackets += 1
 
+    def popPacket(self):
+        self.queue.get()
 
-class PacketGenerator:
+
+class PacketGenerator(object):
     packetsPerSecond = 5
     _secondsPerTick = 0
     packetLength = 200
