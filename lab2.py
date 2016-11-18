@@ -7,7 +7,7 @@ import random
 
 # Carrier Sense Multiple Access with collision detection(CSMA/CD)
 
-kSecondsPerTick = 10**(-5) # should be 10**(-8)
+kSecondsPerTick = 10**(-4) # should be 10**(-8)
 kSenseBitTimes = 96
 kJammingBitTimes = 48
 kBEBMaxI = 10
@@ -40,8 +40,8 @@ class CSMABus(object):
         isBusy = False
         for key, packet in self.packets.iteritems():
             physicalDist = self.physicalDist(nodeIndex, packet.srcNodeIndex)
-            firstPassTime = physicalDist / self.propSpeed + self.packet.creationTime
-            lastPassTime = firstPassTime + self.packet.length / self.lanSpeed
+            firstPassTime = physicalDist / self.propSpeed + packet.creationTime
+            lastPassTime = firstPassTime + packet.packetLength / self.lanSpeed
 
             if firstPassTime <= currTime <= lastPassTime:
                 isBusy = True
@@ -50,23 +50,28 @@ class CSMABus(object):
 
     # self, CSMAPacket
     def addPacket(self, packet):
-        print("Adding Packet\n")
+        # print("Adding Packet\n")
         self.packets[packet.uid] = packet
 
     def removePacket(self, packetUid):
-        print("Removing Packet\n")
+        # print("Removing Packet\n")
         pkt = self.packets[packetUid]
         del self.packets[packetUid]
         return pkt
 
     # node: Integer
     def packetArrivedForNode(self, nodeIndex, currTime):
+
+        if nodeIndex <=0:
+            print("Error: Node index cannot be zero or negative!")
+            return None
+
         for key, packet in self.packets.iteritems():
             if packet.destNodeIndex == nodeIndex:
                 
                 physicalDist = self.physicalDist(packet.destNodeIndex, packet.srcNodeIndex)
                 firstPassTime = physicalDist / self.propSpeed + packet.creationTime
-                lastPassTime = firstPassTime + packet.length / self.lanSpeed
+                lastPassTime = firstPassTime + packet.packetLength / self.lanSpeed
 
                 # see if the packet has been fully processed
                 if lastPassTime >= currTime:
@@ -88,20 +93,23 @@ class Node(object):
             print("Error: BEB i value should be less or equal to 10\n")
             return None
 
-        randVal = random.randint(0, 2**i - 1)
+        randVal = random.randint(0, 2**iVal - 1)
         Tp = 512 / self.lanSpeed
         randTime = Tp * randVal
         ticksReq = randTime / kSecondsPerTick
         return ticksReq
 
     def requiredSensingTicks(self):
-        return kSenseBitTimes/self.lanSpeed/kSecondsPerTick
+        ticks = float(kSenseBitTimes)/float(self.lanSpeed)/kSecondsPerTick
+        return round(ticks)
 
     def requiredJammingTicks(self):
-        return kJammingBitTimes/self.lanSpeed/kSecondsPerTick
+        ticks = float(kJammingBitTimes)/self.lanSpeed/kSecondsPerTick
+        return round(ticks)
 
     def requiredSendingTicks(self):
-        return self.packetLength/self.lanSpeed/kSecondsPerTick
+        ticks = float(self.packetLength)/self.lanSpeed/kSecondsPerTick
+        return round(ticks)
 
 
 class SendState(object):
@@ -122,8 +130,9 @@ class SendStatus(object):
 
 class NodeNonAndPPersistent(Node):
 
-    def __init__(self, index, A, W, L, csmaBus, shouldSenseWait, pPersistentProbability):
+    def __init__(self, index, numNodes, A, W, L, csmaBus, shouldSenseWait, pPersistentProbability):
         super(NodeNonAndPPersistent, self).__init__(W, index, L)
+        self.numNodes = numNodes
 
         self.avgArrival = A #A Average arrival rate (pkts/s)[var]
 
@@ -170,8 +179,8 @@ class NodeNonAndPPersistent(Node):
                 self.requiredStateTicks -= 1
 
                 if self.senseMediumBusy(currTime):
-                    waitTicks = self.generateRandomWaitTicks(currentI)
-                    if not shouldSenseWait:
+                    waitTicks = self.generateRandomWaitTicks(self.currentI)
+                    if not self.shouldSenseWait:
                         waitTicks = 0
 
                     self.sendState = SendState.WAITING
@@ -180,8 +189,8 @@ class NodeNonAndPPersistent(Node):
                     pass
 
             elif self.sendState is SendState.WAITING:
-                if waitTicks > 0:
-                    waitTicks -= 1
+                if self.requiredStateTicks > 0:
+                    self.requiredStateTicks -= 1
                 else: # Finish waiting
                     self.sendState = SendState.IDLE
 
@@ -189,10 +198,11 @@ class NodeNonAndPPersistent(Node):
 
                 shouldSend = random.uniform(0, 1) <= self.pPersistentProbability
                 if shouldSend:
+                    self.requiredStateTicks = self.requiredSendingTicks()
                     self.sendState = SendState.SENDING
                 else:
                     self.sendState = SendState.PRESENDWAITING
-                    waitTicks = self.generateRandomWaitTicks(currentI)
+                    waitTicks = self.generateRandomWaitTicks(self.currentI)
                     self.requiredStateTicks = waitTicks
 
             elif self.sendState is SendState.PRESENDWAITING:
@@ -253,7 +263,7 @@ class NodeNonAndPPersistent(Node):
 
 
     def receivePacketForTick(self, currTime):
-        packet = self.csmaBus.packetArrivedForNode(self, currTime)
+        packet = self.csmaBus.packetArrivedForNode(self.index, currTime)
 
         if packet is not None:
             packet.completeService(currTime + packet.packetLength / self.lanSpeed)
@@ -262,18 +272,17 @@ class NodeNonAndPPersistent(Node):
 
     # returns True if the medium is busy, vice versa
     def senseMediumBusy(self, currTime):
-        return self.csmaBus.isBusyForNode(self, currTime)
+        return self.csmaBus.isBusyForNode(self.index, currTime)
 
     def sendPacketForTick(self, currentTime):
 
-        self.requiredStateTicks = self.requiredSendingTicks()
         if self.senseMediumBusy(currentTime):
             status = SendStatus.COLLISION
         elif self.requiredStateTicks > 0:
             self.requiredStateTicks -= 1
             status = SendStatus.SENDING
 
-        elif self.requiredStateTicks == 0:
+        elif self.requiredStateTicks <= 0:
             newPacket = self.generateNewPacket(currentTime)
             newPacket.startService(currentTime)
             self.csmaBus.addPacket(newPacket)
@@ -284,9 +293,9 @@ class NodeNonAndPPersistent(Node):
         return status
 
     def generateNewPacket(self, currentTime):
-        destNodeIndex = random.randint(1, self.lan.numNodes)
+        destNodeIndex = random.randint(1, self.numNodes)
         while destNodeIndex == self.index:
-            destNodeIndex = random.randint(1, self.lan.numNodes)
+            destNodeIndex = random.randint(1, self.numNodes)
 
         newPacket = CSMAPacket(self.packetLength, currentTime, self.index, destNodeIndex)
         return newPacket
@@ -304,10 +313,8 @@ class LAN(object):
 
         self.nodes = []
         for index in xrange(0, self.N):
-            node = NodeNonAndPPersistent(index, A, W, L, self.csmaBus, shouldSenseWait, self.P)
+            node = NodeNonAndPPersistent(index, self.N, A, W, L, self.csmaBus, shouldSenseWait, self.P)
             self.nodes.append(node)
-
-        print("Finished adding node to LAN\n")
 
     def simulate(self):
         for tick in xrange(0, self.totalTicks):
