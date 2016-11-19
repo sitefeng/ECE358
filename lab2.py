@@ -7,7 +7,7 @@ import random
 
 # Carrier Sense Multiple Access with collision detection(CSMA/CD)
 
-kSecondsPerTick = 10**(-4) # should be 10**(-8)
+kSecondsPerTick = 10**(-5) # should be 10**(-8)
 kSenseBitTimes = 96
 kJammingBitTimes = 48
 kBEBMaxI = 10
@@ -32,7 +32,8 @@ class CSMABus(object):
         self.lanSpeed = lanSpeed
 
     def physicalDist(self, nodeIndex1, nodeIndex2):
-        return abs(nodeIndex1 - nodeIndex2) * self.nodeDistance
+        phyDist = abs(nodeIndex1 - nodeIndex2) * self.nodeDistance
+        return float(phyDist)
 
     # Assuming nodes are linearly arranged on a bus, 
     # node is sequencially index from 1 to N from left to right
@@ -41,7 +42,7 @@ class CSMABus(object):
         for key, packet in self.packets.iteritems():
             physicalDist = self.physicalDist(nodeIndex, packet.srcNodeIndex)
             firstPassTime = physicalDist / self.propSpeed + packet.creationTime
-            lastPassTime = firstPassTime + packet.packetLength / self.lanSpeed
+            lastPassTime = firstPassTime + packet.packetLength / float(self.lanSpeed)
 
             if firstPassTime <= currTime <= lastPassTime:
                 isBusy = True
@@ -70,8 +71,8 @@ class CSMABus(object):
             if packet.destNodeIndex == nodeIndex:
                 
                 physicalDist = self.physicalDist(packet.destNodeIndex, packet.srcNodeIndex)
-                firstPassTime = physicalDist / self.propSpeed + packet.creationTime
-                lastPassTime = firstPassTime + packet.packetLength / self.lanSpeed
+                firstPassTime = physicalDist / float(self.propSpeed) + packet.creationTime
+                lastPassTime = firstPassTime + packet.packetLength / float(self.lanSpeed)
 
                 # see if the packet has been fully processed
                 if lastPassTime >= currTime:
@@ -137,7 +138,7 @@ class NodeNonAndPPersistent(Node):
         self.avgArrival = A #A Average arrival rate (pkts/s)[var]
 
         self.csmaBus = csmaBus
-        self.sendQueue = PacketQueue(self.avgArrival, L, queueSize=10000, secondsPerTick=kSecondsPerTick)
+        self.sendQueue = PacketQueue(self.avgArrival, L, queueSize=1000, secondsPerTick=kSecondsPerTick)
         self.statistics = Statistics.sharedStatistics()
 
         self.requiredStateTicks = 0
@@ -266,7 +267,7 @@ class NodeNonAndPPersistent(Node):
         packet = self.csmaBus.packetArrivedForNode(self.index, currTime)
 
         if packet is not None:
-            packet.completeService(currTime + packet.packetLength / self.lanSpeed)
+            packet.completeService(currTime + packet.packetLength / float(self.lanSpeed))
             self.csmaBus.removePacket(packet.uid)
             self.statistics.trackPacketServiced(packet)
 
@@ -322,7 +323,6 @@ class LAN(object):
                 currTime = self.getCurrentTime(tick)
                 self.nodes[nodeIndex].registerTick(currTime)
 
-        print("Individual Simulation Finished\n")
         endTime = self.getCurrentTime(self.totalTicks-1)
         throughput = self.statistics.networkThroughput(endTime)
         avgDelay = self.statistics.networkAverageDelay()
@@ -361,26 +361,51 @@ class Statistics(object):
         if self.packetsReceived <= 0:
             print("Error: networkAverageDelay packetsReceived is zero")
             return 0
-        avgDelay = self.packetDelaySum / self.packetsReceived
+        avgDelay = float(self.packetDelaySum) / float(self.packetsReceived)
         return avgDelay
+
+def simulateOnePersistent(totalTicks):
+    Ns = [20, 40, 60, 80, 100]
+    As = [6, 20]
+
+    for A in As:
+        for N in Ns:
+            myLAN = LAN(totalTicks, N, A, False)
+            (throughput, avgDelay) = myLAN.simulate()
+            print("N[%d], A[%d], throughput[%.3fMbps], avgDelay[%fs]" % (N, A, throughput / 10 ** 6, avgDelay))
+
+def simulateNonPersistent(totalTicks):
+
+    Ns = [20, 40, 60, 80, 100]
+    As = [6, 20]
+
+    for A in As:
+        for N in Ns:
+            myLAN = LAN(totalTicks, N, A, True)
+            (throughput, avgDelay) = myLAN.simulate()
+            print("N[%d], A[%d], throughput[%.3fMbps], avgDelay[%fs]" % (N, A, throughput / 10 ** 6, avgDelay))
+
+
+def simulatePPersistent(totalTicks):
+    Ps = [0.01, 0.1, 1]
+    As = [2, 4, 6, 8, 10]
+    N = 30
+
+    for P in Ps:
+        for A in As:
+            myLAN = LAN(totalTicks, N, A, False, P)
+            (throughput, avgDelay) = myLAN.simulate()
+            print("P[%.2f], A[%d], throughput[%.3fMbps], avgDelay[%fs]" % (P, A, throughput / 10 ** 6, avgDelay))
+
 
 def main(args):
     
     simulationTime = 1.0
     totalTicks = int(simulationTime / kSecondsPerTick)
 
-    Ns = [20, 40, 60, 80, 100]
-    As = [6, 20]
-
     print("Results\n")
-
-    for A in As:
-        for N in Ns:
-            myLAN = LAN(totalTicks, N, A, True)
-            (throughput, avgDelay) = myLAN.simulate()
-            print("throughput[%.0f], avgDelay[%.0f]" % (throughput, avgDelay))
-
-    
+    simulatePPersistent(totalTicks)
+    simulateNonPersistent(totalTicks)
 
 if __name__ == "__main__":
     main(sys.argv[1:])

@@ -25,7 +25,7 @@ class Packet(object):
 
     def duration(self):
         if self.serviced == False or self.servicedTime == -1 or self.creationTime == -1:
-            print "Not serviced yet"
+            print "Error: Not serviced yet"
             return -1
 
         return self.servicedTime - self.creationTime
